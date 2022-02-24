@@ -3,12 +3,24 @@ namespace Tool.Compet.Photon {
 	using System.Collections.Generic;
 	using UnityEngine;
 
+	/// Make Photon can work with Unity main thread (Update loop).
+	/// By using this handler, we can send task in background to main thread via `Post()` method,
+	/// so they will be executed at update loop (late update, fixed update,...).
 	internal class PhotonHandler : MonoBehaviour {
 		internal static PhotonHandler instance;
 
+		/// Indicate some action was queued and are in pending state.
+		/// This is NOT equivalent to check with `pendingActions.Count > 0`
+		/// since we have wrapped `pendingActions` and `runningActions` in `ExecutePendingActions()`.
+		private volatile bool hasPendingAction;
+
+		/// Actions are pending for execution.
 		private List<Action> pendingActions = new(8);
+
+		/// Actions will be executed at update loop.
 		private List<Action> runningActions = new(8);
 
+		/// We instantiate instance before use.
 		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
 		private static void Initialize() {
 			if (instance == null) {
@@ -17,6 +29,8 @@ namespace Tool.Compet.Photon {
 			}
 		}
 
+		// Note: This is commented out since if it was called at background, it causes problem
+		// when working with Unity engine that we must call Unity methods at main thread.
 		// public static PhotonHandler Instance {
 		// 	get {
 		// 		if (instance == null) {
@@ -33,13 +47,14 @@ namespace Tool.Compet.Photon {
 		public void Post(Action action) {
 			lock (pendingActions) {
 				pendingActions.Add(action);
+				hasPendingAction = true;
 			}
 		}
 
 #if !PHOTON_RUN_AT_FIXED_UPDATE && !PHOTON_RUN_AT_LATE_UPDATE
 		/// Called by Unity engine.
 		private void Update() {
-			if (pendingActions.Count > 0) {
+			if (hasPendingAction) {
 				ExecutePendingActions();
 			}
 		}
@@ -48,7 +63,7 @@ namespace Tool.Compet.Photon {
 		/// Called by Unity engine.
 #if PHOTON_RUN_AT_FIXED_UPDATE
 		private void FixedUpdate() {
-			if (pendingActions.Count > 0) {
+			if (hasPendingAction) {
 				ExecutePendingActions();
 			}
 		}
@@ -57,7 +72,7 @@ namespace Tool.Compet.Photon {
 		/// Called by Unity engine.
 #if PHOTON_RUN_AT_LATE_UPDATE
 		private void LateUpdate() {
-			if (pendingActions.Count > 0) {
+			if (hasPendingAction) {
 				ExecutePendingActions();
 			}
 		}
@@ -68,18 +83,26 @@ namespace Tool.Compet.Photon {
 		/// TechNote: this is optimized by reducing multiple lock times to one lock when handle with `pendingActions`.
 		/// Ref: https://answers.unity.com/questions/305882/how-do-i-invoke-functions-on-the-main-thread.html
 		private void ExecutePendingActions() {
-			// Switch own running repo to pending repo.
-			// We make other threads post to own running repo instead.
+			// Switch pending repo to running repo.
+			// So we are free to work with pending repo without locking.
+			// After below lock, aother threads will post to own running repo instead.
 			List<Action> pendingRepo;
+
 			lock (pendingActions) {
 				pendingRepo = pendingActions;
 				pendingActions = runningActions;
 				runningActions = pendingRepo;
+
+				// At next step, we will execute all pending actions and clear them.
+				// But we MUST mark pending action are empty here since we are in safe (lock state).
+				// If we mark at outside of this lock, this flag was maybe set AFTER some thread
+				// at `Post()` method, will cause this flag does not indicate exact state of pending action.
+				hasPendingAction = false;
 			}
 
 			// At this time, we are free to do/modify pending repo since
 			// other threads are looking at running repo :)
-			for (int index = 0, N = pendingRepo.Count - 1; index < N; ++index) {
+			for (int index = 0, N = pendingRepo.Count; index < N; ++index) {
 				pendingRepo[index]();
 			}
 			pendingRepo.Clear();
@@ -95,5 +118,15 @@ namespace Tool.Compet.Photon {
 			this.CancelInvoke();
 			this.StopAllCoroutines();
 		}
+
+		// Just for reference.
+		// public static void RunAsync(Action action) {
+		// 	System.Threading.ThreadPool.QueueUserWorkItem(o => action());
+		// }
+
+		// Just for reference.
+		// public static void RunAsync(Action<object> action, object state) {
+		// 	System.Threading.ThreadPool.QueueUserWorkItem(o => action(o), state);
+		// }
 	}
 }
