@@ -20,5 +20,11 @@ namespace Tool.Compet.Photon {
 
 		/// Use this to cancel communication or disconnect with remote server.
 		public CancellationTokenSource cancellationTokenSource = new();
+
+		/// Allow Photon can ping the realtime server to check connection.
+		public bool allowPingServer;
+
+		/// If `allowPingServer` was enabled, then Photon will ping in each this milliseconds (default 5 seconds).
+		public int pingIntervalMillis = 5000;
 	}
 }
