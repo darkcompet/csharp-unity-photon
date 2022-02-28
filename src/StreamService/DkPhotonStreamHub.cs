@@ -35,10 +35,6 @@ namespace Tool.Compet.Photon {
 			if (!photonConnector.connected) {
 				await photonConnector.ConnectAsync(setting);
 			}
-
-			if (setting.allowPingServer) {
-				///
-			}
 		}
 
 		/// Send to server with message type as `DkPhotonMessageType.SERVICE`.

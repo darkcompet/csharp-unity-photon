@@ -22,7 +22,7 @@ namespace Tool.Compet.Photon {
 		public CancellationTokenSource cancellationTokenSource = new();
 
 		/// Allow Photon can ping the realtime server to check connection.
-		public bool allowPingServer;
+		public bool allowPingServer = true;
 
 		/// If `allowPingServer` was enabled, then Photon will ping in each this milliseconds (default 5 seconds).
 		public int pingIntervalMillis = 5000;

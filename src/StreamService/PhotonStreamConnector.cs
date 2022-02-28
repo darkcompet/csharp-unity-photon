@@ -58,9 +58,18 @@ namespace Tool.Compet.Photon {
 		/// To avoid allocate new array when receive message from server.
 		private ArraySegment<byte> inBuffer;
 
-		/// Cancel event from outside.
-		private CancellationToken cancellationToken;
+		/// For cancel stream.
 		private CancellationTokenSource cancellationTokenSource;
+
+		/// Use this to check cancel-event raised or not.
+		private CancellationToken cancellationToken;
+
+		/// Mapping between ping-id and ping-time.
+		private Dictionary<int, long> pingTimings = new();
+
+		/// Current travel time (in milliseconds) between client and sever.
+		/// This is ping-pong time, one cycle [from client -> to server -> back to client].
+		internal long roundTripTime;
 
 		internal protected PhotonStreamConnector(int inBufferSize = 1 << 12) {
 			this.socket = new();
@@ -104,6 +113,35 @@ namespace Tool.Compet.Photon {
 					}
 				};
 			}, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+			// Schedule polling server to check round-trip-time (ping-pong time).
+			if (setting.allowPingServer) {
+				SchedulePingServer(setting.pingIntervalMillis);
+			}
+		}
+
+		private void SchedulePingServer(int intervalMillis, int delayedMillis = 0) {
+			var pingId = 0;
+			System.Threading.Timer pingTimer = null;
+
+			async void TimerCallback(object state) {
+				pingTimings[pingId] = DkUtils.CurrentUnixTimeInMillis();
+
+				var pingOutData = MessagePackSerializer.Serialize(new object[] {
+					DkPhotonMessageType.PING,
+					pingId,
+				});
+
+				await SendAsync(pingOutData);
+
+				if (cancellationToken.IsCancellationRequested) {
+					pingTimer.Dispose();
+				}
+			}
+
+			// To make 1 time callback (not every interval time),
+			// just pass intervalMillis as `System.Threading.Timeout.Infinite`.
+			pingTimer = new Timer(TimerCallback, null, delayedMillis, intervalMillis);
 		}
 
 		/// [Background]
@@ -117,9 +155,20 @@ namespace Tool.Compet.Photon {
 			// [Read header info]
 			// Before parse all incoming data to some unknown object, we read head-values without parsing all data
 			// to determine which method will be targeted (this is nice feature of MessagePack)
-			var arrLength = reader.ReadArrayHeader();
-
+			var arrLength = reader.ReadArrayHeader(); // MUST read header first, otherwise we get error.
 			var messageType = (DkPhotonMessageType)reader.ReadByte();
+
+			// Handle ping response
+			if (messageType == DkPhotonMessageType.PING) {
+				var pingId = reader.ReadInt32();
+				roundTripTime = DkUtils.CurrentUnixTimeInMillis() - pingTimings[pingId];
+
+				pingTimings.Remove(pingId);
+
+				if (DkBuildConfig.DEBUG) { DkLogs.Debug(this, $"Ping-{pingId} took {roundTripTime} ms"); }
+				return;
+			}
+
 			var hubId = reader.ReadByte();
 			var methodId = reader.ReadInt16();
 
@@ -147,6 +196,11 @@ namespace Tool.Compet.Photon {
 		/// to let caller can use `await` on this method.
 		internal async Task SendAsync(byte[] outData) {
 			await socket.SendAsync(new ArraySegment<byte>(outData), WebSocketMessageType.Binary, true, CancellationToken.None);
+		}
+
+		internal async Task SendTextAsync(string outText) {
+			var outData = System.Text.Encoding.UTF8.GetBytes(outText);
+			await socket.SendAsync(new ArraySegment<byte>(outData), WebSocketMessageType.Text, true, CancellationToken.None);
 		}
 
 		/// TechNote: we make this as `async Task` instead of `async void`
@@ -182,6 +236,9 @@ namespace Tool.Compet.Photon {
 				case WebSocketMessageType.Binary: {
 					return (inBuffer.Array, inResult.Count);
 				}
+				// case WebSocketMessageType.Text: {
+				// 	return (inBuffer.Array, inResult.Count);
+				// }
 				default: {
 					if (DkBuildConfig.DEBUG) { DkLogs.Debug(this, $"Unhandled inResult.MessageType: {inResult.MessageType}"); }
 					return (null, 0);

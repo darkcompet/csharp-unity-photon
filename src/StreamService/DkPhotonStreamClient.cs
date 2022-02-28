@@ -1,5 +1,4 @@
 namespace Tool.Compet.Photon {
-	using System;
 	using System.Threading.Tasks;
 
 	public class DkPhotonStreamClient {

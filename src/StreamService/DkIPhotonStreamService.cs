@@ -1,7 +1,7 @@
 namespace Tool.Compet.Photon {
 	using System.Threading.Tasks;
 
-	public interface DkIPhotonService<TServiceResponse> : IPhotonService {
+	public interface DkIPhotonStreamService<TServiceResponse> : IPhotonService {
 		/// Remote Procedure Call.
 		///
 		/// In general, when the client call this method, it will send to remote server,
@@ -18,6 +18,6 @@ namespace Tool.Compet.Photon {
 		public void Disconnect();
 	}
 
-	public interface DkIPhotonServiceResponse {
+	public interface DkIPhotonStreamServiceResponse {
 	}
 }
