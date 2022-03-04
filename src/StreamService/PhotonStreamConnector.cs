@@ -44,8 +44,6 @@ namespace Tool.Compet.Photon {
 	/// Talk: https://fmgamer99.wordpress.com/2018/10/22/nhat-ky-lam-game-online-realtime-no-1-chon-cong-nghe-unitysocketio/
 	/// Servers architecture: https://qiita.com/naoya-kishimoto/items/0d913a4b65ec0c4088a6
 	public class PhotonStreamConnector : PhotonConnector {
-		public bool inRoom;
-
 		/// Indicates the connection is still in preparing, not yet ready for be used.
 		public bool connecting => socket.State == WebSocketState.Connecting;
 
@@ -61,28 +59,47 @@ namespace Tool.Compet.Photon {
 		/// For cancel stream.
 		private CancellationTokenSource cancellationTokenSource;
 
-		/// Use this to check cancel-event raised or not.
-		private CancellationToken cancellationToken;
+		/// Use this to check which hub will consume the data when received data from remote server.
+		/// This is mapping between [hubId, terminalClassId, terminalStreamHubInstance].
+		internal DkPhotonStreamHub[][] hubs;
 
-		/// Mapping between ping-id and ping-time.
+		/// Mapping between ping-id and ping-send-timing (in milliseconds).
 		private Dictionary<int, long> pingTimings = new();
+
+		/// Indicate we are scheduling ping to remote server.
+		private bool isPollingServerForRoundTripTime;
 
 		/// Current travel time (in milliseconds) between client and sever.
 		/// This is ping-pong time, one cycle [from client -> to server -> back to client].
 		internal long roundTripTime;
 
-		internal protected PhotonStreamConnector(int inBufferSize = 1 << 12) {
+		internal protected PhotonStreamConnector(DkPhotonConnectionSetting setting) {
 			this.socket = new();
-			this.inBuffer = new ArraySegment<byte>(new byte[inBufferSize], 0, inBufferSize);
+			this.inBuffer = new ArraySegment<byte>(new byte[setting.inBufferSize]);
+			this.hubs = new DkPhotonStreamHub[PhotonStreamServiceRegistry.STREAM_HUB_SERVICE_COUNT][];
+		}
+
+		/// This will replace current registered-terminalHub with given hub.
+		internal protected void RegisterHub(int hubId, int terminalId, DkPhotonStreamHub hub) {
+			var hubArr = this.hubs[hubId];
+			if (hubArr == null) {
+				hubArr = this.hubs[hubId] = new DkPhotonStreamHub[PhotonStreamServiceRegistry.TerminalCount(hubId)];
+			}
+			hubArr[terminalId] = hub;
+		}
+
+		internal void UnregisterHub(int hubId, int terminalId) {
+			this.hubs[hubId][terminalId] = null;
 		}
 
 		/// @MainThread
-		/// Connect to lobby server which contains all client connections.
+		/// Connect to realtime server, and start pinging server as caller's request.
 		/// TechNote: we make this as `async Task` instead of `async void`
 		/// to let caller can use `await` on this method.
 		internal async Task ConnectAsync(DkPhotonConnectionSetting setting) {
+			this.cancellationTokenSource = setting.cancellationTokenSource;
+
 			var mainThreadContext = SynchronizationContext.Current;
-			var cancellationTokenSource = this.cancellationTokenSource = setting.cancellationTokenSource;
 			var cancellationToken = cancellationTokenSource.Token;
 
 			// [Connect to server]
@@ -104,7 +121,7 @@ namespace Tool.Compet.Photon {
 						// Note: do NOT write log here since it causes weird problem for receiving data...
 						var (buffer, count) = await this.ReceiveAsync();
 						if (buffer != null) {
-							// We have to switch to new method since MessagePack specification requires that.
+							// We have to switch to new method since MessagePack's serializer does not work with async/await.
 							ConsumeIncomingData(mainThreadContext, buffer, 0, count);
 						}
 					}
@@ -114,27 +131,26 @@ namespace Tool.Compet.Photon {
 				};
 			}, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
+			// [Polling server for round-trip-time]
 			// Schedule polling server to check round-trip-time (ping-pong time).
-			if (setting.allowPingServer) {
-				SchedulePingServer(setting.pingIntervalMillis);
+			if (!isPollingServerForRoundTripTime && setting.allowPingServer) {
+				isPollingServerForRoundTripTime = true;
+				StartPollingServiceForRoundTripTime(setting.pingIntervalMillis);
 			}
 		}
 
-		private void SchedulePingServer(int intervalMillis, int delayedMillis = 0) {
-			var pingId = 0;
+		private void StartPollingServiceForRoundTripTime(int intervalMillis, int delayedMillis = 0) {
+			var pingId = -1;
 			System.Threading.Timer pingTimer = null;
 
 			async void TimerCallback(object state) {
+				pingId++;
 				pingTimings[pingId] = DkUtils.CurrentUnixTimeInMillis();
 
-				var pingOutData = MessagePackSerializer.Serialize(new object[] {
-					DkPhotonMessageType.PING,
-					pingId,
-				});
-
+				var pingOutData = MessagePackSerializer.Serialize(new object[] { DkPhotonMessageType.PING, pingId });
 				await SendAsync(pingOutData);
 
-				if (cancellationToken.IsCancellationRequested) {
+				if (cancellationTokenSource.IsCancellationRequested) {
 					pingTimer.Dispose();
 				}
 			}
@@ -144,7 +160,7 @@ namespace Tool.Compet.Photon {
 			pingTimer = new Timer(TimerCallback, null, delayedMillis, intervalMillis);
 		}
 
-		/// [Background]
+		/// @Background
 		/// Still in background worker so can NOT call directly such methods: ToString(), GetName(),... of MonoBehaviour.
 		private void ConsumeIncomingData(SynchronizationContext context, byte[] buffer, int offset, int count) {
 			// dkopt: can make MessagePack accept offset to avoid allocate/copyto new array?
@@ -158,22 +174,31 @@ namespace Tool.Compet.Photon {
 			var arrLength = reader.ReadArrayHeader(); // MUST read header first, otherwise we get error.
 			var messageType = (DkPhotonMessageType)reader.ReadByte();
 
-			// Handle ping response
+			// [Handle ping response]
 			if (messageType == DkPhotonMessageType.PING) {
 				var pingId = reader.ReadInt32();
-				roundTripTime = DkUtils.CurrentUnixTimeInMillis() - pingTimings[pingId];
-
+				this.roundTripTime = DkUtils.CurrentUnixTimeInMillis() - pingTimings[pingId];
+				// Remove pingId for better memory allocation
 				pingTimings.Remove(pingId);
 
-				if (DkBuildConfig.DEBUG) { DkLogs.Debug(this, $"Ping-{pingId} took {roundTripTime} ms"); }
+				if (DkBuildConfig.DEBUG) { Tool.Compet.Log.DkLogs.Debug(this, $"Ping-{pingId} took {this.roundTripTime} ms"); }
 				return;
 			}
 
+			// [Handle response for another types]
 			var hubId = reader.ReadByte();
+			var classId = reader.ReadInt16();
 			var methodId = reader.ReadInt16();
 
-			// Service data format: [messageType, hubId, methodId, msgPackObj]
-			// RPC data format: [messageType, hubId, methodId, rpcTarget, msgPackObj]
+			// We don't handle response when target terminalHub is absent.
+			// dktodo: we should buffer this incoming data for later call??
+			var targetTerminalHub = this.hubs[hubId][classId];
+			if (targetTerminalHub == null) {
+				return;
+			}
+
+			// Service data format: [messageType, hubId, classId, methodId, msgPackObj]
+			// RPC data format    : [messageType, hubId, classId, methodId, rpcTarget, msgPackObj]
 			switch (messageType) {
 				case DkPhotonMessageType.SERVICE: {
 					break;
@@ -185,8 +210,8 @@ namespace Tool.Compet.Photon {
 			}
 
 			// Tell the hub handle the incoming event
-			var paramsOffset = reader.Consumed;
-			this.hubs[hubId].HandleResponse(context, methodId, inData, paramsOffset);
+			var paramsOffset = (int)reader.Consumed;
+			targetTerminalHub.HandleResponse(context, methodId, inData, paramsOffset);
 		}
 
 		/// Send binary raw data to server.
@@ -251,6 +276,9 @@ namespace Tool.Compet.Photon {
 		/// to let caller can use `await` on this method.
 		internal async Task CloseAsync() {
 			try {
+				// First cancel own token
+				cancellationTokenSource.Cancel();
+
 				// Tell server release the socket connection.
 				await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "OK", CancellationToken.None);
 			}
