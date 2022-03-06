@@ -26,15 +26,8 @@ namespace Tool.Compet.Photon {
 		/// Use-case: PhotonConnector uses this id to pass incoming event to target hub.
 		public readonly int id;
 
-		/// Terminal presents for an end-user who works directly with this hub.
-		/// In general, each hub can associate with multiple terminals via same hub-id.
-		/// This terminal will be released via `OnDestroy()` when the client got destroyed.
-		/// Normally, terminal is MonoBehaviour in Unity, or Controller in server,...
-		protected object? terminal;
-
-		protected PhotonHub(int id, object terminal) {
+		protected PhotonHub(int id) {
 			this.id = id;
-			this.terminal = terminal;
 
 			// // [Collect RPC-methods inside terminal]
 			// // TechNote: to retrieve methods, we must combine with `BindingFlags.Instance` flag.
@@ -56,13 +49,6 @@ namespace Tool.Compet.Photon {
 			// 		responseMethods.TryAdd(repsonseMethodIds[terminalMethodName], terminalMethod);
 			// 	}
 			// }
-		}
-
-		/// Called when the terminal get destroyed.
-		/// The app should call this when override.
-		public virtual void OnDestroy() {
-			// Release the terminal to avoid memory leak.
-			this.terminal = null;
 		}
 	}
 }

@@ -3,13 +3,14 @@ namespace Tool.Compet.Photon {
 	using System.Threading;
 	using System.Threading.Tasks;
 	using MessagePack;
-	using Tool.Compet.Core;
 	using Tool.Compet.Log;
 
 	/// This hub is for frame-based streaming like game, video,...
 	/// This class holds terminalClassId to support multiple clients (terminals),
 	/// so it can be considered as TerminalStreamHub.
 	public abstract class DkPhotonStreamHub : PhotonHub {
+		/// Terminal presents for an end-user who works directly with this hub.
+		/// In general, each hub can associate with multiple terminals via same hub-id.
 		/// Each stream hub will associate with some terminal.
 		/// To separate which terminal is associated with this hub, we use this id.
 		protected int terminalId;
@@ -24,11 +25,11 @@ namespace Tool.Compet.Photon {
 		private CancellationToken cancellationToken;
 
 		/// @MainThread
-		public DkPhotonStreamHub(int id, int terminalId, object terminal) : base(id, terminal) {
+		public DkPhotonStreamHub(int id, int terminalId) : base(id) {
 			this.terminalId = terminalId;
 
 			if (photonConnector == null) {
-				throw new Exception("Stream client is not installed ! Please call `DkPhotonStreamClient.Install()` first.");
+				throw new Exception("Stream client is not initialized ! Please call `DkPhotonStreamClient.ConnectAsync()` first.");
 			}
 
 			// Register this hub to the connector.
@@ -76,9 +77,7 @@ namespace Tool.Compet.Photon {
 
 		/// @MainThread
 		/// Cleanup this hub resource.
-		public override void OnDestroy() {
-			base.OnDestroy();
-
+		public void OnDestroy() {
 			// Tell connector release this hub.
 			photonConnector.UnregisterHub(this.id, this.terminalId);
 		}

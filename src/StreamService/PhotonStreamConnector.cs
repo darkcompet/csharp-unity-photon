@@ -168,6 +168,8 @@ namespace Tool.Compet.Photon {
 			Array.Copy(buffer, offset, inData, 0, count);
 			var reader = new MessagePackReader(inData);
 
+			if (DkBuildConfig.DEBUG) { Tool.Compet.Log.DkLogs.Debug(this, $"Received {count}/{buffer.Length} bytes"); }
+
 			// [Read header info]
 			// Before parse all incoming data to some unknown object, we read head-values without parsing all data
 			// to determine which method will be targeted (this is nice feature of MessagePack)
@@ -220,6 +222,7 @@ namespace Tool.Compet.Photon {
 		/// TechNote: we make this as `async Task` instead of `async void`
 		/// to let caller can use `await` on this method.
 		internal async Task SendAsync(byte[] outData) {
+			if (DkBuildConfig.DEBUG) { Tool.Compet.Log.DkLogs.Debug(this, $"Sent {outData.Length} bytes"); }
 			await socket.SendAsync(new ArraySegment<byte>(outData), WebSocketMessageType.Binary, true, CancellationToken.None);
 		}
 
