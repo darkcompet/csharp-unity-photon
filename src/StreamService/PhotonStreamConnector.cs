@@ -29,20 +29,21 @@ namespace Tool.Compet.Photon {
 	///  Hub 2  <----> PhotonConnector <----> Hub 2
 	///  Hub 3 /                             \ Hub 3
 
-	/// Socket (TCP vs UDP): https://en.wikipedia.org/wiki/Nagle%27s_algorithm
-	/// TCP test for Unity client: https://gist.github.com/danielbierwirth/0636650b005834204cb19ef5ae6ccedb
-	/// Raw socket impl server side: https://stackoverflow.com/questions/36526332/simple-socket-server-in-unity
-	/// Unity websocket-based socketio: https://github.com/itisnajim/SocketIOUnity
-	/// Unity client websocket: https://devblogs.microsoft.com/xamarin/developing-real-time-communication-apps-with-websocket/
-	/// Tasking with ThreadPool in C#: https://stackoverflow.com/questions/7889746/creating-threads-task-factory-startnew-vs-new-thread
-	/// Compare with Ktor websocket: https://ktor.io/docs/websocket.html#api-overview
-	/// Websocket client: https://github.com/Marfusios/websocket-client
-	/// MessagePack for SignalR: https://docs.microsoft.com/en-us/aspnet/core/signalr/messagepackhubprotocol?view=aspnetcore-6.0
-	/// SignalR for client: https://www.nuget.org/packages/Microsoft.AspNetCore.SignalR.Client/6.0.1
-	/// Call methods via attribute: https://stackoverflow.com/questions/46359351/how-to-call-methods-with-method-attributes
-	/// [From NuGet PM] Super websocket: https://www.supersocket.net/
-	/// Talk: https://fmgamer99.wordpress.com/2018/10/22/nhat-ky-lam-game-online-realtime-no-1-chon-cong-nghe-unitysocketio/
-	/// Servers architecture: https://qiita.com/naoya-kishimoto/items/0d913a4b65ec0c4088a6
+	/// - Socket (TCP vs UDP): https://en.wikipedia.org/wiki/Nagle%27s_algorithm
+	/// - TCP test for Unity client: https://gist.github.com/danielbierwirth/0636650b005834204cb19ef5ae6ccedb
+	/// - Raw socket impl server side: https://stackoverflow.com/questions/36526332/simple-socket-server-in-unity
+	/// - Unity websocket-based socketio: https://github.com/itisnajim/SocketIOUnity
+	/// - Unity client websocket: https://devblogs.microsoft.com/xamarin/developing-real-time-communication-apps-with-websocket/
+	/// - Tasking with ThreadPool in C#: https://stackoverflow.com/questions/7889746/creating-threads-task-factory-startnew-vs-new-thread
+	/// - Compare with Ktor websocket: https://ktor.io/docs/websocket.html#api-overview
+	/// - Websocket client: https://github.com/Marfusios/websocket-client
+	/// - Native websocket: https://github.com/endel/NativeWebSocket/blob/master/NativeWebSocket/Assets/WebSocket/WebSocket.cs
+	/// - Super websocket: https://www.supersocket.net/
+	/// - MessagePack for SignalR: https://docs.microsoft.com/en-us/aspnet/core/signalr/messagepackhubprotocol?view=aspnetcore-6.0
+	/// - SignalR for client: https://www.nuget.org/packages/Microsoft.AspNetCore.SignalR.Client/6.0.1
+	/// - Call methods via attribute: https://stackoverflow.com/questions/46359351/how-to-call-methods-with-method-attributes
+	/// - Talk: https://fmgamer99.wordpress.com/2018/10/22/nhat-ky-lam-game-online-realtime-no-1-chon-cong-nghe-unitysocketio/
+	/// - Servers architecture: https://qiita.com/naoya-kishimoto/items/0d913a4b65ec0c4088a6
 	public class PhotonStreamConnector : PhotonConnector {
 		/// Indicates the connection is still in preparing, not yet ready for be used.
 		public bool connecting => socket.State == WebSocketState.Connecting;
@@ -50,7 +51,7 @@ namespace Tool.Compet.Photon {
 		/// Indicates the connection is ready for use (send, receive,...).
 		public bool connected => socket.State == WebSocketState.Open;
 
-		/// Communicator between server and client
+		/// Communicator between server and client.
 		private ClientWebSocket socket;
 
 		/// To avoid allocate new array when receive message from server.

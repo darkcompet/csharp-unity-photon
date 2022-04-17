@@ -4,15 +4,15 @@ namespace Tool.Compet.Photon {
 	using System.Threading;
 	using System.Threading.Tasks;
 
-	/// Hub is a gate which communicates with server via a connector, and directly handle with a client (terminal).
-	/// We can consider a hub as a communicator between server and client.
-	/// Inside each hub, it contain a connector for communicating with server,
-	/// and wraps a terminal (client) object as below:
-	///                                <---> Hub_XXX (multiple instances, each holds a Terminal)
+	/// Hub is a client presenter which communicates with server.
+	/// Client will use a hub to send/receive data to/from the server.
+	/// To do that, each hub will contain a `connector (communicator)` and a `terminal (client)`
+	/// to perform communication. See below:
+	///                                <---> Hub_1
 	///                               /
-	/// Server <---> (PhotonConnector) <---> Hub_ZZZ (multiple instances, each holds a Terminal)
+	/// Server <---> PhotonConnector <---> Hub_2
 	///                               \
-	///                                <---> Hub_YYY (multiple instances, each holds a Terminal)
+	///                                <---> Hub_3
 	public abstract class PhotonHub {
 		/// This is called from the photon-connector when we get incoming-data from remote server.
 		/// Subclass can deserialize the incoming data, then call the target method in the terminal.
